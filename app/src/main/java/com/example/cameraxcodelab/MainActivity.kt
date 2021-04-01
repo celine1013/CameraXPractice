@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
     private fun startCamera() {
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener(Runnable {
+        cameraProviderFuture.addListener({
             // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider = cameraProviderFuture.get()
 
@@ -108,8 +108,6 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Preview use case binding failed", e)
             }
         }, getMainExecutor(this))
-
-
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
