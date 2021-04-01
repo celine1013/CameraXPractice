@@ -3,13 +3,18 @@ package com.example.cameraxcodelab
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.cameraxcodelab.databinding.ActivityMainBinding
 import java.io.File
+import java.lang.Exception
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -29,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         // Request camera permissions
         if (allPermissionsGranted()) {
-            startCamera()
+            startCamera()//start the preview
         } else {
             ActivityCompat.requestPermissions(
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
@@ -60,7 +65,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {}
 
-    private fun startCamera() {}
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener(Runnable {
+            // Used to bind the lifecycle of cameras to the lifecycle owner
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also { it.setSurfaceProvider(binding.viewFinder.surfaceProvider) }
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA //select back camera as default
+            try{
+                cameraProvider.unbindAll() //unbind before rebinding
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview) //bind to current lifecycle
+            } catch (e: Exception){
+                Log.e(TAG, "Preview use case binding failed", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
