@@ -7,10 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -18,11 +15,13 @@ import androidx.core.content.ContextCompat.getMainExecutor
 import com.example.cameraxcodelab.databinding.ActivityMainBinding
 import java.io.File
 import java.lang.Exception
+import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+//not necessary but makes code easier to read
 typealias LumaListener = (luma: Double) -> Unit
 
 class MainActivity : AppCompatActivity() {
@@ -98,12 +97,20 @@ class MainActivity : AppCompatActivity() {
             val cameraProvider = cameraProviderFuture.get()
 
             imageCapture = ImageCapture.Builder().build()//for image capture usecase
+            
+            //image analyzer usecase
+            val imageAnalyzer = ImageAnalysis.Builder().build().also {
+                it.setAnalyzer(cameraExecutor, LuminosityAnalyzer{luma ->
+                    //what to do with the output (output to UI)
+                    Log.d(TAG, "Average Lumi $luma")
+                })
+            }
 
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(binding.viewFinder.surfaceProvider) }
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA //select back camera as default
             try{
                 cameraProvider.unbindAll() //unbind before rebinding
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture) //bind to current lifecycle
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer) //bind to current lifecycle
             } catch (e: Exception){
                 Log.e(TAG, "Preview use case binding failed", e)
             }
@@ -134,5 +141,21 @@ class MainActivity : AppCompatActivity() {
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+    }
+
+    private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
+
+        override fun analyze(image: ImageProxy) {
+            //play around with the buffer
+            val buffer = image.planes[0].buffer
+            val data = buffer.toByteArray()
+            val pixels = data.map { it.toInt() and 0xFF }
+            val luma = pixels.average()
+
+            //any external ui update etc.
+            listener(luma)
+
+            image.close()
+        }
     }
 }
