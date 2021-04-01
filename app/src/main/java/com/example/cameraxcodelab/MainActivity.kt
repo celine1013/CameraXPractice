@@ -97,11 +97,11 @@ class MainActivity : AppCompatActivity() {
             val cameraProvider = cameraProviderFuture.get()
 
             imageCapture = ImageCapture.Builder().build()//for image capture usecase
-            
+
             //image analyzer usecase
             val imageAnalyzer = ImageAnalysis.Builder().build().also {
                 it.setAnalyzer(cameraExecutor, LuminosityAnalyzer{luma ->
-                    //what to do with the output (output to UI)
+                    //UI related operation
                     Log.d(TAG, "Average Lumi $luma")
                 })
             }
