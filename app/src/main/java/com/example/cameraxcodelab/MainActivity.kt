@@ -2,19 +2,24 @@ package com.example.cameraxcodelab
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.getMainExecutor
 import com.example.cameraxcodelab.databinding.ActivityMainBinding
 import java.io.File
 import java.lang.Exception
+import java.text.SimpleDateFormat
+import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -63,23 +68,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun takePhoto() {}
+    private fun takePhoto() {
+        //to get a stable ref in case imageCapture becomes null
+        val capture = imageCapture ?: return
+        val fileName = "Example_"+SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + ".jpg"
+        //outputDir initialized in onCreate
+        val photoFile = File(outputDirectory, fileName)
+        val options = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        capture.takePicture(
+            options, getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+                }
+
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(photoFile)
+                    val msg = "Photo capture succeeded: $savedUri"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    Log.d(TAG, msg)
+                }
+            })
+    }
 
     private fun startCamera() {
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(Runnable {
             // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider = cameraProviderFuture.get()
 
+            imageCapture = ImageCapture.Builder().build()//for image capture usecase
+
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(binding.viewFinder.surfaceProvider) }
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA //select back camera as default
             try{
                 cameraProvider.unbindAll() //unbind before rebinding
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview) //bind to current lifecycle
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture) //bind to current lifecycle
             } catch (e: Exception){
                 Log.e(TAG, "Preview use case binding failed", e)
             }
-        }, ContextCompat.getMainExecutor(this))
+        }, getMainExecutor(this))
+
+
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
