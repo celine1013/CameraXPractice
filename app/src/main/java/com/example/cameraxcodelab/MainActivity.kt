@@ -1,6 +1,7 @@
 package com.example.cameraxcodelab
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -25,12 +26,9 @@ import java.util.concurrent.Executors
 typealias LumaListener = (luma: Double) -> Unit
 
 class MainActivity : AppCompatActivity() {
-    private var imageCapture: ImageCapture? = null
 
     private lateinit var binding: ActivityMainBinding
-
     private lateinit var outputDirectory: File
-    private lateinit var cameraExecutor: ExecutorService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,10 +45,7 @@ class MainActivity : AppCompatActivity() {
 
         // Set up the listener for take photo button
         binding.cameraCaptureButton.setOnClickListener { takePhoto() }
-
         outputDirectory = getOutputDirectory()
-
-        cameraExecutor = Executors.newSingleThreadExecutor()
 
     }
 
@@ -68,13 +63,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun takePhoto() {
-        //to get a stable ref in case imageCapture becomes null
-        val capture = imageCapture ?: return
         val fileName = "Example_"+SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + ".jpg"
         //outputDir initialized in onCreate
         val photoFile = File(outputDirectory, fileName)
         val options = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-        capture.takePicture(
+        binding.viewFinder.takePicture(
             options, getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
                 override fun onError(exc: ImageCaptureException) {
                     Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
@@ -89,32 +82,9 @@ class MainActivity : AppCompatActivity() {
             })
     }
 
+    @SuppressLint("MissingPermission")//already checked in onRequestPermissionsResult
     private fun startCamera() {
-
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
-            val cameraProvider = cameraProviderFuture.get()
-
-            imageCapture = ImageCapture.Builder().build()//for image capture usecase
-
-            //image analyzer usecase
-            val imageAnalyzer = ImageAnalysis.Builder().build().also {
-                it.setAnalyzer(cameraExecutor, LuminosityAnalyzer{luma ->
-                    //UI related operation
-                    Log.d(TAG, "Average Lumi $luma")
-                })
-            }
-
-            val preview = Preview.Builder().build().also { it.setSurfaceProvider(binding.viewFinder.surfaceProvider) }
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA //select back camera as default
-            try{
-                cameraProvider.unbindAll() //unbind before rebinding
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer) //bind to current lifecycle
-            } catch (e: Exception){
-                Log.e(TAG, "Preview use case binding failed", e)
-            }
-        }, getMainExecutor(this))
+        binding.viewFinder.bindToLifecycle(this)
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
@@ -131,31 +101,10 @@ class MainActivity : AppCompatActivity() {
             mediaDir else filesDir
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
-    }
-
     companion object {
         private const val TAG = "CameraXBasic"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
-    }
-
-    private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
-
-        override fun analyze(image: ImageProxy) {
-            //play around with the buffer
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-            val pixels = data.map { it.toInt() and 0xFF }
-            val luma = pixels.average()
-
-            //any external ui update etc.
-            listener(luma)
-
-            image.close()
-        }
     }
 }
