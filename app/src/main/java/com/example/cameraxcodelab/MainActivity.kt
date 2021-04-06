@@ -7,15 +7,16 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.*
-import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.view.LifecycleCameraController
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getMainExecutor
 import com.example.cameraxcodelab.databinding.ActivityMainBinding
 import java.io.File
-import java.lang.Exception
-import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -25,12 +26,10 @@ import java.util.concurrent.Executors
 typealias LumaListener = (luma: Double) -> Unit
 
 class MainActivity : AppCompatActivity() {
-    private var imageCapture: ImageCapture? = null
-
     private lateinit var binding: ActivityMainBinding
 
     private lateinit var outputDirectory: File
-    private lateinit var cameraExecutor: ExecutorService
+    private var cameraController: LifecycleCameraController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,31 +49,37 @@ class MainActivity : AppCompatActivity() {
 
         outputDirectory = getOutputDirectory()
 
-        cameraExecutor = Executors.newSingleThreadExecutor()
-
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
                 startCamera()
             } else {
-                Toast.makeText(this,
+                Toast.makeText(
+                    this,
                     "Permissions not granted by the user.",
-                    Toast.LENGTH_SHORT).show()
+                    Toast.LENGTH_SHORT
+                ).show()
                 finish()
             }
         }
     }
 
     private fun takePhoto() {
-        //to get a stable ref in case imageCapture becomes null
-        val capture = imageCapture ?: return
-        val fileName = "Example_"+SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + ".jpg"
+        if(cameraController == null) return
+        val fileName = "Example_" + SimpleDateFormat(
+            FILENAME_FORMAT,
+            Locale.ENGLISH
+        ).format(System.currentTimeMillis()) + ".jpg"
         //outputDir initialized in onCreate
         val photoFile = File(outputDirectory, fileName)
         val options = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-        capture.takePicture(
+        cameraController!!.takePicture(
             options, getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
                 override fun onError(exc: ImageCaptureException) {
                     Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
@@ -90,31 +95,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startCamera() {
-
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
-            val cameraProvider = cameraProviderFuture.get()
-
-            imageCapture = ImageCapture.Builder().build()//for image capture usecase
-
-            //image analyzer usecase
-            val imageAnalyzer = ImageAnalysis.Builder().build().also {
-                it.setAnalyzer(cameraExecutor, LuminosityAnalyzer{luma ->
-                    //UI related operation
-                    Log.d(TAG, "Average Lumi $luma")
-                })
-            }
-
-            val preview = Preview.Builder().build().also { it.setSurfaceProvider(binding.viewFinder.surfaceProvider) }
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA //select back camera as default
-            try{
-                cameraProvider.unbindAll() //unbind before rebinding
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer) //bind to current lifecycle
-            } catch (e: Exception){
-                Log.e(TAG, "Preview use case binding failed", e)
-            }
-        }, getMainExecutor(this))
+        cameraController = LifecycleCameraController(baseContext)
+        cameraController!!.setImageAnalysisAnalyzer(getMainExecutor(this), LuminosityAnalyzer{
+            Log.d(TAG, "lumi analysis:$it")
+        })
+        cameraController!!.bindToLifecycle(this)
+        binding.viewFinder.controller = cameraController
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
@@ -129,11 +115,6 @@ class MainActivity : AppCompatActivity() {
         }
         return if (mediaDir != null && mediaDir.exists())
             mediaDir else filesDir
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
     }
 
     companion object {
